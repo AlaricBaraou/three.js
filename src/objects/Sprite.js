@@ -135,6 +135,8 @@ class Sprite extends Object3D {
 
 		} );
 
+		return true;
+
 	}
 
 	copy( source, recursive ) {

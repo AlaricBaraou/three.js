@@ -189,13 +189,16 @@ class Mesh extends Object3D {
 
 		// test for intersections with geometry
 
-		this._computeIntersections( raycaster, intersects, _ray );
+		const didIntersect = this._computeIntersections( raycaster, intersects, _ray );
+
+		return didIntersect;
 
 	}
 
 	_computeIntersections( raycaster, intersects, rayLocalSpace ) {
 
 		let intersection;
+		let didIntersect;
 
 		const geometry = this.geometry;
 		const material = this.material;
@@ -232,6 +235,8 @@ class Mesh extends Object3D {
 
 						if ( intersection ) {
 
+							didIntersect = true;
+
 							intersection.faceIndex = Math.floor( j / 3 ); // triangle number in indexed buffer semantics
 							intersection.face.materialIndex = group.materialIndex;
 							intersects.push( intersection );
@@ -256,6 +261,8 @@ class Mesh extends Object3D {
 					intersection = checkGeometryIntersection( this, material, raycaster, rayLocalSpace, uv, uv1, normal, a, b, c );
 
 					if ( intersection ) {
+
+						didIntersect = true;
 
 						intersection.faceIndex = Math.floor( i / 3 ); // triangle number in indexed buffer semantics
 						intersects.push( intersection );
@@ -290,6 +297,8 @@ class Mesh extends Object3D {
 
 						if ( intersection ) {
 
+							didIntersect = true;
+
 							intersection.faceIndex = Math.floor( j / 3 ); // triangle number in non-indexed buffer semantics
 							intersection.face.materialIndex = group.materialIndex;
 							intersects.push( intersection );
@@ -315,6 +324,8 @@ class Mesh extends Object3D {
 
 					if ( intersection ) {
 
+						didIntersect = true;
+
 						intersection.faceIndex = Math.floor( i / 3 ); // triangle number in non-indexed buffer semantics
 						intersects.push( intersection );
 
@@ -325,6 +336,8 @@ class Mesh extends Object3D {
 			}
 
 		}
+
+		return didIntersect;
 
 	}
 

@@ -35,22 +35,32 @@
 			import * as THREE from 'three';
 
 			import Stats from 'three/addons/libs/stats.module.js';
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
 			let stats;
 			let camera, scene, raycaster, renderer;
 
-			let INTERSECTED;
+			const RAYCASTEDS = [];
+			const RAYCASTEDHIT = [];
+			
 			let theta = 0;
 
 			const pointer = new THREE.Vector2();
-			const radius = 5;
+			const radius = 20;
+
+			const settings = {
+				exitOnFirstHit: false,
+				exitChildOnMiss: false,
+				hitCount: 0,
+				rayCastPerf: 0,
+			};
 
 			init();
 			animate();
 
 			function init() {
 
-				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 100000 );
 
 				scene = new THREE.Scene();
 				scene.background = new THREE.Color( 0xf0f0f0 );
@@ -59,25 +69,103 @@
 				light.position.set( 1, 1, 1 ).normalize();
 				scene.add( light );
 
-				const geometry = new THREE.BoxGeometry();
+				const gui = new GUI();
+				gui.add( settings, 'exitOnFirstHit', 0, false );
+				gui.add( settings, 'exitChildOnMiss', 0, false );
+				gui.add( settings, 'hitCount' ).disable().listen();
+				gui.add( settings, 'rayCastPerf' ).disable().listen();
 
-				for ( let i = 0; i < 2000; i ++ ) {
+				const pyramidCount = 1;
 
-					const object = new THREE.Mesh( geometry, new THREE.MeshLambertMaterial( { color: Math.random() * 0xffffff } ) );
+				const cubesMap = {};
+			
+				for ( let pyramidIndex = 0; pyramidIndex < pyramidCount; pyramidIndex ++ ) {
 
-					object.position.x = Math.random() * 40 - 20;
-					object.position.y = Math.random() * 40 - 20;
-					object.position.z = Math.random() * 40 - 20;
+					const pyramidHeight = 20; // Number of levels in the pyramid
 
-					object.rotation.x = Math.random() * 2 * Math.PI;
-					object.rotation.y = Math.random() * 2 * Math.PI;
-					object.rotation.z = Math.random() * 2 * Math.PI;
+					for ( let level = pyramidHeight; level >= 0; level -- ) {
 
-					object.scale.x = Math.random() + 0.5;
-					object.scale.y = Math.random() + 0.5;
-					object.scale.z = Math.random() + 0.5;
+						const cubesInLevel = pyramidHeight - level; // Determines the number of cubes in this level
 
-					scene.add( object );
+						for ( let i = 0; i <= cubesInLevel; i ++ ) {
+
+							const cubeKey = pyramidIndex + '_' + level + '_' + i;
+							const cubeParentKey = pyramidIndex + '_' + ( level + 1 ) + '_' + ( i === cubesInLevel ? i - 1 : i );
+
+							const boxHeight = ( pyramidHeight - cubesInLevel );//englobe children
+							const boxWidth = ( pyramidHeight - cubesInLevel ) * 2 + 1;//englobe children
+							// console.log( 'boxWidth', boxWidth );
+							// const boxHeight = 1;
+							// const boxWidth = 1;
+							const geometry = new THREE.BoxGeometry( boxWidth, boxHeight, 1 );
+							const cube = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( { color: 0x0000ff, opacity: 0.1, transparent: true, wireframe: true } ) );
+
+			
+							cube.name = cubeKey;
+			
+
+							cubesMap[ cubeKey ] = cube;
+							// console.log( 'cubeKey', cubeKey );
+							// console.log( 'cubeParentKey', cubeParentKey );
+							if ( cubesMap[ cubeParentKey ] ) {
+
+								// Adjust position to create a pyramid shape
+								cube.position.x = ( i === cubesInLevel ? 0.5 : - 0.5 ); // Adjust X to spread pyramids and center cubes in each level
+								cube.position.y = 0.5; // Stack levels vertically
+								cube.position.z = 0; // Center cubes in Z axis
+								cubesMap[ cubeParentKey ].add( cube );
+
+							} else {
+
+								// Adjust position to create a pyramid shape
+								cube.position.x = ( i - cubesInLevel / 2 ) * 2; // Adjust X to spread pyramids and center cubes in each level
+								cube.position.y = + boxHeight / 2 - 0.5; // Stack levels vertically
+								cube.position.z = ( - pyramidCount * 1.5 ) / 2 + pyramidIndex * 1.5; // Center cubes in Z axis
+
+								scene.add( cube );
+			
+							}
+
+							cube.updateMatrix();
+							cube.updateMatrixWorld();
+
+							const originalRaycast = cube.raycast;
+
+							// Override the raycast method with a new function
+							cube.raycast = function ( raycaster, intersects ) {
+
+								RAYCASTEDS.push( this );
+								this.material.color.setHex( 0xff0000 );
+
+								// Call the original raycast function with the current context and original arguments
+								const didIntersect = originalRaycast.call( this, raycaster, intersects );
+			
+								if ( settings.exitOnFirstHit && didIntersect ) {
+
+									console.log( 'stopRaycast' );
+									raycaster.stopRaycast();
+
+								}
+
+
+								if ( settings.exitChildOnMiss && ! didIntersect ) {
+
+									console.log( 'stop traversal', cubeKey, intersects[ 0 ] ? intersects[ 0 ].object.name : '', didIntersect );
+									raycaster.stopTraversal();
+
+								}
+			
+							};
+
+
+			
+			
+						}
+
+					}
+
+					console.log( 'scene', scene.children );
+
 
 				}
 
@@ -141,25 +229,45 @@
 
 				raycaster.setFromCamera( pointer, camera );
 
-				const intersects = raycaster.intersectObjects( scene.children, false );
+				for ( let i = 0; i < RAYCASTEDS.length; i ++ ) {
+
+					const element = RAYCASTEDS[ i ];
+					element.material.color.setHex( 0x0000ff );
+
+				}
+
+				RAYCASTEDS.length = 0;
+
+				const rayCastStart = performance.now();
+				const intersects = raycaster.intersectObjects( scene.children, true );
+				settings.hitCount = intersects.length;
+				settings.rayCastPerf = performance.now() - rayCastStart;
+
+				//reset previous intersections
+				for ( let i = 0; i < RAYCASTEDHIT.length; i ++ ) {
+
+					const element = RAYCASTEDHIT[ i ];
+					element.object.material.color.setHex( 0x0000ff );
+			
+				}
+
+
+			
+
+				RAYCASTEDHIT.length = 0;
 
 				if ( intersects.length > 0 ) {
 
-					if ( INTERSECTED != intersects[ 0 ].object ) {
+					for ( let i = 0; i < intersects.length; i ++ ) {
 
-						if ( INTERSECTED ) INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
+						const intersect = intersects[ i ];
 
-						INTERSECTED = intersects[ 0 ].object;
-						INTERSECTED.currentHex = INTERSECTED.material.emissive.getHex();
-						INTERSECTED.material.emissive.setHex( 0xff0000 );
+						intersect.object.currentHex = intersect.object.material.color.getHex();
+						intersect.object.material.color.setHex( 0x00ff00 );
 
+						RAYCASTEDHIT.push( intersect );
+			
 					}
-
-				} else {
-
-					if ( INTERSECTED ) INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
-
-					INTERSECTED = null;
 
 				}
 

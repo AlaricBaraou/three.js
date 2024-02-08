@@ -134,6 +134,8 @@ class InstancedMesh extends Mesh {
 
 	raycast( raycaster, intersects ) {
 
+		let didIntersect;
+
 		const matrixWorld = this.matrixWorld;
 		const raycastTimes = this.count;
 
@@ -169,6 +171,12 @@ class InstancedMesh extends Mesh {
 
 			// process the result of raycast
 
+			if ( _instanceIntersects.length ) {
+
+				didIntersect = true;
+
+			}
+
 			for ( let i = 0, l = _instanceIntersects.length; i < l; i ++ ) {
 
 				const intersect = _instanceIntersects[ i ];
@@ -181,6 +189,8 @@ class InstancedMesh extends Mesh {
 			_instanceIntersects.length = 0;
 
 		}
+
+		return didIntersect;
 
 	}
 

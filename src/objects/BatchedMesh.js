@@ -766,6 +766,8 @@ class BatchedMesh extends Mesh {
 
 	raycast( raycaster, intersects ) {
 
+		let didIntersect;
+
 		const visibility = this._visibility;
 		const active = this._active;
 		const drawRanges = this._drawRanges;
@@ -806,6 +808,12 @@ class BatchedMesh extends Mesh {
 			this.getBoundingSphereAt( i, _mesh.geometry.boundingSphere );
 			_mesh.raycast( raycaster, _batchIntersects );
 
+			if ( _instanceIntersects.length ) {
+
+				didIntersect = true;
+
+			}
+
 			// add batch id to the intersects
 			for ( let j = 0, l = _batchIntersects.length; j < l; j ++ ) {
 
@@ -824,6 +832,8 @@ class BatchedMesh extends Mesh {
 		_mesh.geometry.index = null;
 		_mesh.geometry.attributes = {};
 		_mesh.geometry.setDrawRange( 0, Infinity );
+
+		return didIntersect;
 
 	}
 

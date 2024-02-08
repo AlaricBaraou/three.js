@@ -51,6 +51,8 @@ function getWorldSpaceHalfWidth( camera, distance, resolution ) {
 
 function raycastWorldUnits( lineSegments, intersects ) {
 
+	let didIntersect;
+
 	const matrixWorld = lineSegments.matrixWorld;
 	const geometry = lineSegments.geometry;
 	const instanceStart = geometry.attributes.instanceStart;
@@ -72,6 +74,8 @@ function raycastWorldUnits( lineSegments, intersects ) {
 
 		if ( isInside ) {
 
+			didIntersect = true;
+
 			intersects.push( {
 				point,
 				pointOnLine,
@@ -87,9 +91,13 @@ function raycastWorldUnits( lineSegments, intersects ) {
 
 	}
 
+	return didIntersect;
+
 }
 
 function raycastScreenSpace( lineSegments, camera, intersects ) {
+
+	let didIntersect;
 
 	const projectionMatrix = camera.projectionMatrix;
 	const material = lineSegments.material;
@@ -205,6 +213,8 @@ function raycastScreenSpace( lineSegments, camera, intersects ) {
 
 			_ray.distanceSqToSegment( _line.start, _line.end, point, pointOnLine );
 
+			didIntersect = true;
+
 			intersects.push( {
 				point: point,
 				pointOnLine: pointOnLine,
@@ -219,6 +229,8 @@ function raycastScreenSpace( lineSegments, camera, intersects ) {
 		}
 
 	}
+
+	return didIntersect;
 
 }
 
@@ -264,6 +276,8 @@ class LineSegments2 extends Mesh {
 	}
 
 	raycast( raycaster, intersects ) {
+
+		let didIntersect;
 
 		const worldUnits = this.material.worldUnits;
 		const camera = raycaster.camera;
@@ -346,13 +360,15 @@ class LineSegments2 extends Mesh {
 
 		if ( worldUnits ) {
 
-			raycastWorldUnits( this, intersects );
+			didIntersect = raycastWorldUnits( this, intersects );
 
 		} else {
 
-			raycastScreenSpace( this, camera, intersects );
+			didIntersect = raycastScreenSpace( this, camera, intersects );
 
 		}
+
+		return didIntersect;
 
 	}
 

@@ -41,6 +41,8 @@ class Points extends Object3D {
 
 	raycast( raycaster, intersects ) {
 
+		let didIntersect;
+
 		const geometry = this.geometry;
 		const matrixWorld = this.matrixWorld;
 		const threshold = raycaster.params.Points.threshold;
@@ -79,7 +81,12 @@ class Points extends Object3D {
 
 				_position.fromBufferAttribute( positionAttribute, a );
 
-				testPoint( _position, a, localThresholdSq, matrixWorld, raycaster, intersects, this );
+				const didHit = testPoint( _position, a, localThresholdSq, matrixWorld, raycaster, intersects, this );
+				if ( didHit ) {
+
+					didIntersect = true;
+
+				}
 
 			}
 
@@ -92,11 +99,18 @@ class Points extends Object3D {
 
 				_position.fromBufferAttribute( positionAttribute, i );
 
-				testPoint( _position, i, localThresholdSq, matrixWorld, raycaster, intersects, this );
+				const didHit = testPoint( _position, i, localThresholdSq, matrixWorld, raycaster, intersects, this );
+				if ( didHit ) {
+
+					didIntersect = true;
+
+				}
 
 			}
 
 		}
+
+		return didIntersect;
 
 	}
 
@@ -158,6 +172,8 @@ function testPoint( point, index, localThresholdSq, matrixWorld, raycaster, inte
 			object: object
 
 		} );
+
+		return true;
 
 	}
 

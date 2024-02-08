@@ -76,6 +76,7 @@ class Line extends Object3D {
 
 	raycast( raycaster, intersects ) {
 
+		let didIntersect;
 		const geometry = this.geometry;
 		const matrixWorld = this.matrixWorld;
 		const threshold = raycaster.params.Line.threshold;
@@ -132,6 +133,8 @@ class Line extends Object3D {
 
 				if ( distance < raycaster.near || distance > raycaster.far ) continue;
 
+				didIntersect = true;
+
 				intersects.push( {
 
 					distance: distance,
@@ -167,6 +170,8 @@ class Line extends Object3D {
 
 				if ( distance < raycaster.near || distance > raycaster.far ) continue;
 
+				didIntersect = true;
+
 				intersects.push( {
 
 					distance: distance,
@@ -183,6 +188,8 @@ class Line extends Object3D {
 			}
 
 		}
+
+		return didIntersect;
 
 	}
 

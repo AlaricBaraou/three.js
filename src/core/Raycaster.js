@@ -2,6 +2,7 @@ import { Ray } from '../math/Ray.js';
 import { Layers } from './Layers.js';
 
 class TraversalStopException {}
+class RaycastStopException {}
 
 class Raycaster {
 
@@ -63,7 +64,7 @@ class Raycaster {
 
 		} catch ( e ) {
 
-			if ( e instanceof TraversalStopException === false ) {
+			if ( e instanceof RaycastStopException === false ) {
 
 				throw e;
 
@@ -83,13 +84,25 @@ class Raycaster {
 
 			for ( let i = 0, l = objects.length; i < l; i ++ ) {
 
-				intersectObject( objects[ i ], this, intersects, recursive );
+				try {
+
+					intersectObject( objects[ i ], this, intersects, recursive );
+
+				} catch ( e ) {
+
+					if ( e instanceof TraversalStopException === false ) {
+
+						throw e;
+
+					}
+
+				}
 
 			}
 
 		} catch ( e ) {
 
-			if ( e instanceof TraversalStopException === false ) {
+			if ( e instanceof RaycastStopException === false ) {
 
 				throw e;
 
@@ -100,6 +113,12 @@ class Raycaster {
 		intersects.sort( ascSort );
 
 		return intersects;
+
+	}
+
+	stopRaycast() {
+
+		throw new RaycastStopException();
 
 	}
 
