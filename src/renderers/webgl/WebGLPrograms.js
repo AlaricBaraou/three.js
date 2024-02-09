@@ -362,7 +362,9 @@ function WebGLPrograms( renderer, cubemaps, cubeuvmaps, extensions, capabilities
 			rendererExtensionShaderTextureLod: IS_WEBGL2 || extensions.has( 'EXT_shader_texture_lod' ),
 			rendererExtensionParallelShaderCompile: extensions.has( 'KHR_parallel_shader_compile' ),
 
-			customProgramCacheKey: material.customProgramCacheKey()
+			customProgramCacheKey: material.customProgramCacheKey(),
+
+			object: object,
 
 		};
 

@@ -106,6 +106,8 @@ class Material extends EventDispatcher {
 
 	onBeforeCompile( /* shaderobject, renderer */ ) {}
 
+	onCompileError( /* shaderobject, shaderstring, object */ ) {}
+
 	customProgramCacheKey() {
 
 		return this.onBeforeCompile.toString();

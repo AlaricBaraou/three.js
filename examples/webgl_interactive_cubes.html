@@ -35,22 +35,32 @@
 			import * as THREE from 'three';
 
 			import Stats from 'three/addons/libs/stats.module.js';
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
 			let stats;
 			let camera, scene, raycaster, renderer;
 
-			let INTERSECTED;
+			const RAYCASTEDS = [];
+			const RAYCASTEDHIT = [];
+			
 			let theta = 0;
 
 			const pointer = new THREE.Vector2();
-			const radius = 5;
+			const radius = 10;
+
+			const settings = {
+				exitOnFirstHit: false,
+				exitChildOnMiss: false,
+				hitCount: 0,
+				rayCastPerf: 0,
+			};
 
 			init();
 			animate();
 
 			function init() {
 
-				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 100000 );
 
 				scene = new THREE.Scene();
 				scene.background = new THREE.Color( 0xf0f0f0 );
@@ -59,33 +69,52 @@
 				light.position.set( 1, 1, 1 ).normalize();
 				scene.add( light );
 
-				const geometry = new THREE.BoxGeometry();
+				const gui = new GUI();
+				gui.add( settings, 'exitOnFirstHit', 0, false );
+				gui.add( settings, 'exitChildOnMiss', 0, false );
+				gui.add( settings, 'hitCount' ).disable().listen();
+				gui.add( settings, 'rayCastPerf' ).disable().listen();
 
-				for ( let i = 0; i < 2000; i ++ ) {
+				const geometry = new THREE.BoxGeometry( 1, 1, 1 );
+				const material = new THREE.ShaderMaterial( {
+					uniforms: {
+					},
+					vertexShader: `
+						varying vec3 vNormal;
+						void main() {
+							vNormal = normal;
+							gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+						}
+					`,
+					fragmentShader: `
+						varying vec3 vNormal;
+						void main() {
+							float intensity = pow( 0.5 - dot( vNormal, vec3( 0.0, 0.0, 1.0 ) ), 2.0 );
+							gl_FragColor = vec4( 1.0, color.y., 1.0, 1.0 ) * intensity;
+						}
+					`
+				} );
+				const cube = new THREE.Mesh( geometry, material );
+				const cubeOK = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( { color: 0x0000ff } ) );
+				cubeOK.position.x = 2;
 
-					const object = new THREE.Mesh( geometry, new THREE.MeshLambertMaterial( { color: Math.random() * 0xffffff } ) );
-
-					object.position.x = Math.random() * 40 - 20;
-					object.position.y = Math.random() * 40 - 20;
-					object.position.z = Math.random() * 40 - 20;
-
-					object.rotation.x = Math.random() * 2 * Math.PI;
-					object.rotation.y = Math.random() * 2 * Math.PI;
-					object.rotation.z = Math.random() * 2 * Math.PI;
-
-					object.scale.x = Math.random() + 0.5;
-					object.scale.y = Math.random() + 0.5;
-					object.scale.z = Math.random() + 0.5;
-
-					scene.add( object );
-
-				}
-
-				raycaster = new THREE.Raycaster();
+				scene.add( cube );
+				scene.add( cubeOK );
 
 				renderer = new THREE.WebGLRenderer( { antialias: true } );
 				renderer.setPixelRatio( window.devicePixelRatio );
 				renderer.setSize( window.innerWidth, window.innerHeight );
+
+				material.onCompileError = function ( shaderObject, shaderstring, object ) {
+
+					console.log( 'object', object );
+					console.log( 'object.material', object.material );
+			
+					// do something with the error
+					cube.material = new THREE.MeshBasicMaterial( { color: 0xff00ff } );
+
+				};
+
 				document.body.appendChild( renderer.domElement );
 
 				stats = new Stats();
@@ -139,29 +168,6 @@
 
 				// find intersections
 
-				raycaster.setFromCamera( pointer, camera );
-
-				const intersects = raycaster.intersectObjects( scene.children, false );
-
-				if ( intersects.length > 0 ) {
-
-					if ( INTERSECTED != intersects[ 0 ].object ) {
-
-						if ( INTERSECTED ) INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
-
-						INTERSECTED = intersects[ 0 ].object;
-						INTERSECTED.currentHex = INTERSECTED.material.emissive.getHex();
-						INTERSECTED.material.emissive.setHex( 0xff0000 );
-
-					}
-
-				} else {
-
-					if ( INTERSECTED ) INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
-
-					INTERSECTED = null;
-
-				}
 
 				renderer.render( scene, camera );
 
