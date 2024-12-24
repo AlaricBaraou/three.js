@@ -122,10 +122,6 @@
 
 				scene.add( csmDirectionalLight );
 
-				csmHelper = new CSMHelper( csm );
-				csmHelper.visible = false;
-				scene.add( csmHelper );
-
 				const floorMaterial = new THREE.MeshPhongMaterial( { color: '#252a34' } );
 
 				const floor = new THREE.Mesh( new THREE.PlaneGeometry( 10000, 10000, 8, 8 ), floorMaterial );
@@ -158,124 +154,13 @@
 
 				}
 
-				const gui = new GUI();
-
-				gui.add( params, 'orthographic' ).onChange( function ( value ) {
-
-					csm.camera = value ? orthoCamera : camera;
-					csm.updateFrustums();
-
-				} );
-
-				// gui.add( params, 'fade' ).onChange( function ( value ) {
-
-				// csm.fade = value;
-				// csm.updateFrustums();
-				// TODO: Changing "fade" requires toggling shadows right now
-
-				// } );
-
-				gui.add( params, 'shadows' ).onChange( function ( value ) {
-
-					renderer.shadowMap.enabled = value;
-
-				} );
-
-				gui.add( params, 'maxFar', 1, 5000 ).step( 1 ).name( 'max shadow far' ).onChange( function ( value ) {
-
-					csm.maxFar = value;
-					csm.updateFrustums();
-
-				} );
-
-				gui.add( params, 'mode', [ 'uniform', 'logarithmic', 'practical' ] ).name( 'frustum split mode' ).onChange( function ( value ) {
-
-					csm.mode = value;
-					csm.updateFrustums();
-
-				} );
-
-				gui.add( params, 'lightX', - 1, 1 ).name( 'light direction x' ).onChange( function () {
-
-					csmDirectionalLight.position.set( params.lightX, params.lightY, params.lightZ ).normalize().multiplyScalar( - 200 );
-
-				} );
-
-				gui.add( params, 'lightY', - 1, 1 ).name( 'light direction y' ).onChange( function () {
-
-					csmDirectionalLight.position.set( params.lightX, params.lightY, params.lightZ ).normalize().multiplyScalar( - 200 );
-
-				} );
-
-				gui.add( params, 'lightZ', - 1, 1 ).name( 'light direction z' ).onChange( function () {
-
-					csmDirectionalLight.position.set( params.lightX, params.lightY, params.lightZ ).normalize().multiplyScalar( - 200 );
-
-				} );
-
-				gui.add( params, 'margin', 0, 200 ).name( 'light margin' ).onChange( function ( value ) {
-
-					csm.lightMargin = value;
-
-				} );
-
-				gui.add( params, 'shadowNear', 1, 10000 ).name( 'shadow near' ).onChange( function ( value ) {
-
-					for ( let i = 0; i < csm.lights.length; i ++ ) {
-
-						csm.lights[ i ].shadow.camera.near = value;
-						csm.lights[ i ].shadow.camera.updateProjectionMatrix();
-
-					}
-
-				} );
-
-				gui.add( params, 'shadowFar', 1, 10000 ).name( 'shadow far' ).onChange( function ( value ) {
-
-					for ( let i = 0; i < csm.lights.length; i ++ ) {
-
-						csm.lights[ i ].shadow.camera.far = value;
-						csm.lights[ i ].shadow.camera.updateProjectionMatrix();
-
-					}
-
-				} );
-
-				const helperFolder = gui.addFolder( 'helper' );
-
-				helperFolder.add( csmHelper, 'visible' );
-
-				helperFolder.add( csmHelper, 'displayFrustum' ).onChange( function () {
-
-					csmHelper.updateVisibility();
-
-				} );
-
-				helperFolder.add( csmHelper, 'displayPlanes' ).onChange( function () {
-
-					csmHelper.updateVisibility();
-
-				} );
-
-				helperFolder.add( csmHelper, 'displayShadowBounds' ).onChange( function () {
-
-					csmHelper.updateVisibility();
-
-				} );
-
-				helperFolder.add( params, 'autoUpdateHelper' ).name( 'auto update' );
-
-				helperFolder.add( params, 'updateHelper' ).name( 'update' );
-
-				helperFolder.open();
-
 				window.addEventListener( 'resize', function () {
 
 					camera.aspect = window.innerWidth / window.innerHeight;
 					camera.updateProjectionMatrix();
 
 					updateOrthoCamera();
-					csm.updateFrustums();
+					// csm.updateFrustums();
 
 					renderer.setSize( window.innerWidth, window.innerHeight );
 
@@ -291,23 +176,11 @@
 				if ( params.orthographic ) {
 
 					updateOrthoCamera();
-					csm.updateFrustums();
-
-					if ( params.autoUpdateHelper ) {
-
-						csmHelper.update();
-
-					}
+					// csm.updateFrustums();
 
 					renderer.render( scene, orthoCamera );
 
 				} else {
-
-					if ( params.autoUpdateHelper ) {
-
-						csmHelper.update();
-
-					}
 
 					renderer.render( scene, camera );
 

@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<title>three.js webgl - sceneOptimiser - toBatch</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<link type="text/css" rel="stylesheet" href="main.css">
+	<style>
+		#info {
+			background-color: rgba(0,0,0,0.75);
+		}
+	</style>
+</head>
+<body>
+
+	<div id="info">
+
+		<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> webgl - mesh - batch
+
+	</div>
+
+	<script type="importmap">
+		{
+			"imports": {
+				"three": "../build/three.module.js",
+				"three/addons/": "./jsm/"
+			}
+		}
+	</script>
+
+	<script type="module">
+		import * as THREE from 'three';
+
+		import Stats from 'three/addons/libs/stats.module.js';
+		import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+		import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+		import { SceneOptimizer } from 'three/addons/utils/SceneOptimizer.js';
+
+		let stats, gui, guiStatsEl;
+		let camera, controls, scene, renderer;
+		let geometries, mesh, material;
+		const ids = [];
+		const matrix = new THREE.Matrix4();
+
+		//
+
+		const position = new THREE.Vector3();
+		const rotation = new THREE.Euler();
+		const quaternion = new THREE.Quaternion();
+		const scale = new THREE.Vector3();
+
+		//
+
+		const MAX_GEOMETRY_COUNT = 20000;
+
+		const Method = {
+			BATCHED: 'BATCHED',
+			NAIVE: 'NAIVE'
+		};
+
+		const api = {
+			method: Method.BATCHED,
+			count: 256,
+			dynamic: 16,
+
+			sortObjects: true,
+			perObjectFrustumCulled: true,
+			opacity: 1,
+		};
+
+		init();
+		// initGeometries();
+		// initMesh();
+
+		//
+
+		function init() {
+
+			const width = window.innerWidth;
+			const height = window.innerHeight;
+
+			// camera
+
+			camera = new THREE.PerspectiveCamera( 70, width / height, 1, 10000 );
+			camera.position.z = 30;
+
+			// renderer
+
+			renderer = new THREE.WebGLRenderer( { antialias: true } );
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( width, height );
+			renderer.setAnimationLoop( animate );
+			document.body.appendChild( renderer.domElement );
+
+			// scene
+
+			scene = new THREE.Scene();
+			scene.background = new THREE.Color( 0xffffff );
+			scene.add( new THREE.AmbientLight( 0xffffff, 1. ) );
+			scene.add( new THREE.DirectionalLight( 0xffffff, 1. ) );
+
+			// model
+
+			const loader = new GLTFLoader();
+			loader.load( 'models/gltf/chineseCity.glb', async function ( gltf ) {
+
+				const model = gltf.scene;
+
+				const cloneOriginal = model.clone( true );
+
+				console.log( 'cloneOriginal', cloneOriginal );
+
+				console.log( 'cloneOriginal.children[0].children[0].material', cloneOriginal.children[ 0 ].children[ 0 ].children[ 0 ].material.map );
+				console.log( 'cloneOriginal.children[0].children[1].material', cloneOriginal.children[ 0 ].children[ 1 ].children[ 0 ].material.map );
+
+				scene.add( model );
+				model.position.y -= 30;
+
+				// wait until the model can be added to the scene without blocking due to shader compilation
+
+				const optimisedModel = new SceneOptimizer( cloneOriginal, { debug: true } ).toBatchedMesh();
+
+				// console.log( 'optimisedModel', optimisedModel );
+
+				// await renderer.compileAsync( optimisedModel, camera, scene );
+
+				// const simpleBatchMesh = new THREE.BatchedMesh(
+				// 	1,
+				// 	model.children[ 0 ].geometry.attributes.position.count,
+				// 	model.children[ 0 ].geometry.index.count,
+				// 	new THREE.MeshStandardMaterial( {
+				// 		color: model.children[ 0 ].material.color.getHex(),
+				// 	} )
+				// );
+
+				// const boxGeometryId = simpleBatchMesh.addGeometry( model.children[ 0 ].geometry );
+
+				// // create instances of those geometries
+				// const boxInstancedId1 = simpleBatchMesh.addInstance( boxGeometryId );
+
+				// // position the geometries
+				// simpleBatchMesh.setMatrixAt( boxInstancedId1, model.children[ 0 ].matrix );
+
+				// simpleBatchMesh.position.y += 6;
+				// scene.add( simpleBatchMesh );
+
+				// console.log( 'cloneOriginal.children[0].material.uuid', cloneOriginal.children[ 0 ].material.uuid );
+				// console.log( 'optimisedModel.children[0].material.uuid', optimisedModel.children[ 0 ].material.uuid );
+
+				scene.add( optimisedModel );
+
+				console.log( 'scene', scene );
+		
+			} );
+
+			// controls
+
+			controls = new OrbitControls( camera, renderer.domElement );
+			controls.autoRotate = true;
+			controls.autoRotateSpeed = 1.0;
+
+			// stats
+
+			stats = new Stats();
+			document.body.appendChild( stats.dom );
+
+			// gui
+
+			gui = new GUI();
+			gui.add( api, 'dynamic', 0, MAX_GEOMETRY_COUNT ).step( 1 );
+			gui.add( api, 'opacity', 0, 1 ).onChange( v => {
+
+				if ( v < 1 ) {
+
+					material.transparent = true;
+					material.depthWrite = false;
+
+				} else {
+
+					material.transparent = false;
+					material.depthWrite = true;
+
+				}
+
+				material.opacity = v;
+				material.needsUpdate = true;
+
+			} );
+			gui.add( api, 'sortObjects' );
+			gui.add( api, 'perObjectFrustumCulled' );
+
+			guiStatsEl = document.createElement( 'li' );
+			guiStatsEl.classList.add( 'gui-stats' );
+
+			// listeners
+
+			window.addEventListener( 'resize', onWindowResize );
+
+		}
+
+		//
+
+		function onWindowResize() {
+
+			const width = window.innerWidth;
+			const height = window.innerHeight;
+
+			camera.aspect = width / height;
+			camera.updateProjectionMatrix();
+
+			renderer.setSize( width, height );
+
+		}
+
+		function animate() {
+
+			controls.update();
+			stats.update();
+
+			render();
+
+		}
+
+		function render() {
+
+			renderer.render( scene, camera );
+
+		}
+
+	</script>
+
+</body>
+</html>

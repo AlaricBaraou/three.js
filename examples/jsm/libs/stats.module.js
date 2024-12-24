@@ -1,4 +1,4 @@
-var Stats = function () {
+var Stats = function ( renderer ) {
 
 	var mode = 0;
 
@@ -11,8 +11,6 @@ var Stats = function () {
 
 	}, false );
 
-	//
-
 	function addPanel( panel ) {
 
 		container.appendChild( panel.dom );
@@ -24,7 +22,7 @@ var Stats = function () {
 
 		for ( var i = 0; i < container.children.length; i ++ ) {
 
-			container.children[ i ].style.display = i === id ? 'block' : 'none';
+			container.children[ i ].style.display = 'block';
 
 		}
 
@@ -32,12 +30,11 @@ var Stats = function () {
 
 	}
 
-	//
-
 	var beginTime = ( performance || Date ).now(), prevTime = beginTime, frames = 0;
 
 	var fpsPanel = addPanel( new Stats.Panel( 'FPS', '#0ff', '#002' ) );
 	var msPanel = addPanel( new Stats.Panel( 'MS', '#0f0', '#020' ) );
+	var trisPanel = addPanel( new Stats.Panel( 'TRIS', '#ff0', '#220' ) ); // New triangles panel
 
 	if ( self.performance && self.performance.memory ) {
 
@@ -46,13 +43,11 @@ var Stats = function () {
 	}
 
 	showPanel( 0 );
+	showPanel( 1 );
 
 	return {
-
 		REVISION: 16,
-
 		dom: container,
-
 		addPanel: addPanel,
 		showPanel: showPanel,
 
@@ -62,12 +57,15 @@ var Stats = function () {
 
 		},
 
-		end: function () {
+		end: function ( ) {
+
+			const renderInfo = renderer.info;
+
+			console.log( renderInfo );
 
 			frames ++;
 
 			var time = ( performance || Date ).now();
-
 			msPanel.update( time - beginTime, 200 );
 
 			if ( time >= prevTime + 1000 ) {
@@ -84,23 +82,28 @@ var Stats = function () {
 
 				}
 
+				// Update triangles count if renderInfo is provided
+				if ( renderInfo && renderInfo.render ) {
+
+					trisPanel.update( renderInfo.render.triangles, 1000000 ); // Adjust maxValue as needed
+
+				}
+
 			}
 
 			return time;
 
 		},
 
-		update: function () {
+		update: function ( ) {
 
-			beginTime = this.end();
+			beginTime = this.end( );
 
 		},
 
 		// Backwards Compatibility
-
 		domElement: container,
 		setMode: showPanel
-
 	};
 
 };
@@ -136,9 +139,7 @@ Stats.Panel = function ( name, fg, bg ) {
 	context.fillRect( GRAPH_X, GRAPH_Y, GRAPH_WIDTH, GRAPH_HEIGHT );
 
 	return {
-
 		dom: canvas,
-
 		update: function ( value, maxValue ) {
 
 			min = Math.min( min, value );
@@ -159,7 +160,6 @@ Stats.Panel = function ( name, fg, bg ) {
 			context.fillRect( GRAPH_X + GRAPH_WIDTH - PR, GRAPH_Y, PR, round( ( 1 - ( value / maxValue ) ) * GRAPH_HEIGHT ) );
 
 		}
-
 	};
 
 };
