@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - transformfeedback - instancedmesh</title>
+		<meta charset="utf-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+		/>
+		<link type="text/css" rel="stylesheet" href="main.css" />
+	</head>
+	<body>
+		<div id="container"></div>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a>
+			webgl2 - transformfeedback - instancedmesh
+		</div>
+
+		<!-- Import maps polyfill -->
+		<!-- Remove this when import maps will be widely supported -->
+		<script
+			async
+			src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"
+		></script>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script id="vertexShader" type="x-shader/x-vertex">
+			#version 300 es
+			precision highp float;
+
+			uniform float time;     // Animation Time
+			uniform float count;    // Total Instances
+			uniform float uMaxCurves;    // Total Instances
+			uniform sampler2D uCurveTexture; // can remove not used in this version 
+			uniform sampler2D uCurveMetadataTexture;
+			uniform sampler2D uSnakesTexture;
+			uniform sampler2D uSnakesMetadataTexture; // can remove not used in this version 
+
+			out vec3 pos;
+			in vec3 inPos;
+			in int snakeId;
+			in float snakePathLength;
+			const float speed = 1.;
+			const int MAX_SEGMENTS = 32;
+
+			void main(){
+				float prog = inPos.z;
+				float prevCurveId = inPos.x;
+
+				// float snakePathLength = texelFetch(uSnakesMetadataTexture, ivec2(0, snakeId), 0).x;
+				float newTotalProgress = prog * snakePathLength + time * speed;
+
+				float foundCurveId = 0.;
+				float newProgOnCurve = 0.;
+				bool isFound = false;
+
+				// Start searching from the last known segment index.
+				int startSearchIndex = int(prevCurveId);
+
+				// Search from the last segment to the end. This is the most likely place to find it.
+				for (int i = startSearchIndex; i < MAX_SEGMENTS; i++) {
+					vec4 segmentData = texelFetch(uSnakesTexture, ivec2(i, snakeId), 0);
+					
+					// If segment length is 0, it's the end of the path definition.
+					if (segmentData.y == 0.0) {
+						break;
+					}
+
+					float segmentEndCumulative = segmentData.z;
+					if (newTotalProgress <= segmentEndCumulative) {
+						float direction = segmentData.w;
+						foundCurveId = segmentData.x;
+						float segmentLength = segmentData.y;
+						float segmentStart = segmentEndCumulative - segmentLength;
+						float progressOnSegment = newTotalProgress - segmentStart;
+						newProgOnCurve = direction > 0.0 ? progressOnSegment / segmentLength : 1.0 - progressOnSegment / segmentLength;
+						isFound = true;
+						break; // Found it! Exit loop.
+					}
+				}
+
+				// If not found, it means the particle has looped back. Search from the beginning.
+				if (!isFound) {
+					for (int i = 0; i < startSearchIndex; i++) {
+						vec4 segmentData = texelFetch(uSnakesTexture, ivec2(i, snakeId), 0);
+						
+						// An end-of-path marker should have been caught by the first loop.
+						// If not, break to prevent incorrect calculations.
+						if (segmentData.y == 0.0) {
+							break;
+						}
+						
+						float segmentEndCumulative = segmentData.z;
+						if (newTotalProgress <= segmentEndCumulative) {
+							float direction = segmentData.w;
+							foundCurveId = segmentData.x;
+							float segmentLength = segmentData.y;
+							float segmentStart = segmentEndCumulative - segmentLength;
+							float progressOnSegment = newTotalProgress - segmentStart;
+							newProgOnCurve = direction > 0.0 ? progressOnSegment / segmentLength : 1.0 - progressOnSegment / segmentLength;
+							isFound = true; // Not strictly needed, but good practice.
+							break; // Found it! Exit loop.
+						}
+					}
+				}
+
+				pos.x = foundCurveId;
+				pos.y = newProgOnCurve;
+				pos.z = inPos.z;
+			}
+
+		</script>
+
+		<script id="fragmentShader" type="x-shader/x-fragment">
+			#version 300 es
+			void main(){}
+		</script>
+
+		<script id="vertexShaderParticles" type="x-shader/x-vertex">
+			uniform sampler2D uCurveTexture;
+			uniform sampler2D uSnakesMetadataTexture;
+			attribute int snakeId;
+			varying vec3 vColor;
+			const float uMaxCurves = 5000.0; // Total number of curves
+			void main(){
+			    gl_PointSize = 10.;
+				vColor = texelFetch(uSnakesMetadataTexture, ivec2(0, snakeId), 0).xyz;
+				float foundCurveId = position.x;
+				float curveV = foundCurveId / uMaxCurves + 0.5 / uMaxCurves;
+				float prog = position.y;
+				vec2 uv = vec2(prog, curveV);
+			    vec4 curveData = texture(uCurveTexture, uv);
+			    vec3 pos = curveData.xyz;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+			}
+		</script>
+
+		<script id="fragmentShaderParticles" type="x-shader/x-fragment">
+			varying vec3 vColor;
+uniform float uRadius;
+uniform float uThickness;
+uniform float uGlowBlurRadius;
+uniform float uGlowStartAlpha;
+
+// --- SDF Functions ---
+// Calculates the signed distance from a point 'p' to a circle of radius 'r'.
+// Negative inside, positive outside, zero on the edge.
+float sdCircle(vec2 p, float r) {
+    return length(p) - r;
+}
+
+void main() {
+    // Center the point's coordinate from (0,1) to (-0.5, 0.5)
+    vec2 centeredPointCoord = gl_PointCoord - vec2(0.5);
+
+    // Calculate a stable anti-aliasing width.
+    float aa = fwidth(length(centeredPointCoord));
+
+    // 1. SDF for the main circle and the outer edge of the entire shape.
+    float circleSDF = sdCircle(centeredPointCoord, uRadius);
+    float outerEdgeSDF = sdCircle(centeredPointCoord, uRadius + uThickness / 2.0);
+
+    // 2. Define Colors
+    vec3 ringColor = vec3(0.0, 0.0, 0.0);
+    vec3 glowColor = vColor; // Use the particle's color for the glow.
+    // The fill color includes a simple lighting gradient.
+    vec2 lightDir = vec2(0.5, 0.5);
+    float lightAmount = smoothstep(-0.5, 0.5, dot(centeredPointCoord, lightDir));
+    vec3 fillColor = mix(vColor, vColor + 0.5, lightAmount);
+
+    // 3. Calculate the Glow
+    // The glow starts from the outer edge of the ring and fades outwards.
+    float glowAlpha = (1.0 - smoothstep(0.0, uGlowBlurRadius, outerEdgeSDF)) * uGlowStartAlpha;
+    vec4 glow = vec4(glowColor, 1.0) * glowAlpha;
+
+    // 4. Calculate the Inner Shape (Fill + Ring)
+    // Determine if the pixel is on the ring based on its distance from the circle SDF.
+    float ringT = 1.0 - smoothstep((uThickness / 2.0) - aa, (uThickness / 2.0) + aa, abs(circleSDF));
+    vec3 shapeColor = mix(fillColor, ringColor, ringT);
+
+    // Determine the alpha for the main shape (the filled circle and its outline).
+    float shapeAlpha = 1.0 - smoothstep(-aa, aa, outerEdgeSDF);
+    vec4 shape = vec4(shapeColor, shapeAlpha);
+
+    // 5. Blend the Shape on top of the Glow
+    // We use the shape's alpha to mix it over the glow, which is in the background.
+    // This correctly layers the opaque shape over the translucent glow.
+    gl_FragColor = mix(glow, shape, shape.a);
+
+    // Discard pixels that are fully transparent to optimize rendering.
+    if (gl_FragColor.a < 0.01) discard;
+
+	#include <colorspace_fragment>
+}
+		</script>
+
+		<script type="module">
+			// #region IMPORTS & GLOBALS
+			import * as THREE from "three";
+			import WebGL from "three/addons/capabilities/WebGL.js";
+			import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+			import Stats from "three/addons/libs/stats.module.js";
+
+			const clock = new THREE.Clock();
+			let container, stats;
+			let camera, scene, renderer;
+
+			const instCnt = 50;
+			const particleCount = 100000; // Number of particles to simulate
+			const snakeCounts = 5000;
+			const max_segment_count = 8;
+			const CURVE_COUNT = 5000;
+			const POINTS_PER_CURVE = 50;
+			const SPREAD_RANGE = 150; // The size of the area where curves will be generated
+			let points;
+			let instMesh;
+			let feedback;
+			let computeShader;
+			let curveTexture;
+			let curveMetadataTexture;
+			let snakesTexture;
+			let snakesMetadataTexture;
+			let staticIdBuffer
+			let snakePathLengthBuffer
+
+			window.addEventListener("load", () => {
+				init();
+				animate();
+			});
+			// #endregion
+
+			// #region THREEJS SETUP
+
+			function init() {
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				if (WebGL.isWebGL2Available() === false) {
+					document.body.appendChild(WebGL.getWebGL2ErrorMessage());
+					return;
+				}
+
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				container = document.getElementById("container");
+				camera = new THREE.PerspectiveCamera(
+					27,
+					window.innerWidth / window.innerHeight,
+					1,
+					3500
+				);
+				camera.position.set(0, 5, 15);
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color(0x3a3a3a);
+				scene.fog = new THREE.Fog(0x050505, 2000, 3500);
+
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				scene.add(new THREE.AmbientLight(0xcccccc));
+
+				const light1 = new THREE.DirectionalLight(0xffffff, 1.5);
+				light1.position.set(1, 1, 1);
+				scene.add(light1);
+
+				const light2 = new THREE.DirectionalLight(0xffffff, 4.5);
+				light2.position.set(0, -1, 0);
+				scene.add(light2);
+
+				scene.add(new THREE.GridHelper(20, 20, 0x0c610c, 0x494949));
+
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				renderer = new THREE.WebGLRenderer({ antialias: true });
+				renderer.setPixelRatio(window.devicePixelRatio);
+				renderer.setSize(window.innerWidth, window.innerHeight);
+				container.appendChild(renderer.domElement);
+
+				stats = new Stats();
+				container.appendChild(stats.dom);
+
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				const controls = new OrbitControls(camera, renderer.domElement);
+				controls.target.set(0, 2.5, 0);
+				controls.update();
+
+				window.addEventListener("resize", onWindowResize);
+				clock.start();
+				initPrototype();
+			}
+
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+			}
+
+			// #endregion
+
+			// #region RENDER LOOP
+			function animate() {
+				requestAnimationFrame(animate);
+				const et = clock.getElapsedTime()
+				compute(et);
+				render();
+				stats.update();
+			}
+
+			function render() {
+				renderer.render(scene, camera);
+			}
+			// #endregion
+
+			// #region TRANFORM FEEDBACK
+			let tf_readBuffer, tf_writeBuffer; // Buffers for ping-ponging
+
+			function initPrototype() {
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// Create Instanced Mesh
+				const geo = new THREE.BoxGeometry(1, 1, 1);
+				const mat = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
+
+				instMesh = new THREE.InstancedMesh(geo, mat, instCnt);
+				instMesh.position.set(0, 0, 0);
+				instMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // will be updated every frame
+
+				const obj = new THREE.Object3D();
+				for (let i = 0; i < instCnt; i++) {
+					obj.position.set(3 + i, 0, 0);
+					obj.updateMatrix();
+					instMesh.setMatrixAt(i, obj.matrix);
+				}
+
+				instMesh.instanceMatrix.needsUpdate = true;
+				instMesh.geometry.computeBoundingSphere();
+				scene.add(instMesh);
+
+				const geoPoints = new THREE.BufferGeometry();
+				const positions = new Float32Array(particleCount * 3);
+				for (let i = 0; i < particleCount; i++) {
+					positions[i * 3 + 0] = 0;
+					positions[i * 3 + 1] = Math.random(); // progression on the curve written by the tf
+					positions[i * 3 + 2] = Math.random(); // random progress offset in world units within the snake
+				}
+
+				const particleIDs = new Int32Array(particleCount);
+				for (let i = 0; i < particleCount; i++) {
+					particleIDs[i] = Math.floor(Math.random() * snakeCounts); // random snake id
+				}
+
+				const snakePathLengths = new Float32Array(particleCount);
+	
+				// curve generation region
+				// ## 2. Curve Generation
+				// This is the core logic for creating the random curves.
+
+				// A Float32Array to hold all our data (width * height * 4 channels)
+				const textureData = new Float32Array(
+					CURVE_COUNT * POINTS_PER_CURVE * 4
+				);
+
+				// A Float32Array to hold all our data (width * height * 4 channels)
+				const curveMetadataTextureData = new Float32Array(CURVE_COUNT * 4);
+
+				// A Float32Array to hold all our data (width * height * 4 channels)
+				const snakePathsCurveMetadataTextureData = new Float32Array(
+					snakeCounts * 4 * max_segment_count
+				);
+
+				const snakesMetadata = new Float32Array(
+					snakeCounts * 4
+				);
+
+				// A helper function to generate a random 3D point within the range
+				function getRandomPoint() {
+					const x = (Math.random() - 0.5) * SPREAD_RANGE;
+					const y = (Math.random() - 0.5) * SPREAD_RANGE;
+					const z = (Math.random() - 0.5) * SPREAD_RANGE;
+					return new THREE.Vector3(x, y, z);
+				}
+
+				// Loop to create and add 100 curves to the scene
+				for (let i = 0; i < CURVE_COUNT; i++) {
+					// A cubic Bézier curve requires 4 points: start, control 1, control 2, end
+					const startPoint = getRandomPoint();
+					const controlPoint1 = getRandomPoint();
+					const controlPoint2 = getRandomPoint();
+					const endPoint = getRandomPoint();
+
+					// Create the curve object
+					const curve = new THREE.CubicBezierCurve3(
+						startPoint,
+						controlPoint1,
+						controlPoint2,
+						endPoint
+					);
+
+					// To visualize the curve, we get a series of points from it
+					// Get the total length of this specific curve
+					const totalLength = curve.getLength();
+
+					// Get 51 points evenly spaced by distance along the curve
+					const points = curve.getSpacedPoints(POINTS_PER_CURVE - 1);
+
+					// Loop through the 51 points to fill the texture data array
+					for (let j = 0; j < POINTS_PER_CURVE; j++) {
+						const point = points[j];
+
+						// Calculate the index in the flat data array
+						const index = (i * POINTS_PER_CURVE + j) * 4;
+
+						// Store x, y, z in the R, G, B channels
+						textureData[index + 0] = point.x;
+						textureData[index + 1] = point.y;
+						textureData[index + 2] = point.z;
+						// Store the total curve length in the W (alpha) channel
+						textureData[index + 3] = totalLength;
+					}
+					const geometry = new THREE.BufferGeometry().setFromPoints(points);
+
+					const color = new THREE.Color(Math.random() * 0xffffff);
+
+					// Create a material with a random color for each line
+					// const material = new THREE.LineBasicMaterial({
+					// 	color: color,
+					// });
+
+					curveMetadataTextureData[i * 4] = totalLength;
+
+					// Create the final line object and add it to the scene
+					// const curveObject = new THREE.Line(geometry, material);
+					// scene.add(curveObject);
+				}
+
+				for (let i = 0; i < snakeCounts; i++) {
+					let lengthSoFar = 0;
+					for (let index = 0; index < max_segment_count; index++) {
+						const flatIndex = ((i * max_segment_count) + index) * 4;
+						const randomRowInSnakePath = Math.floor(
+							(CURVE_COUNT ) * Math.random()
+						);
+						snakePathsCurveMetadataTextureData[
+							flatIndex
+						] = randomRowInSnakePath; //store segment id
+						snakePathsCurveMetadataTextureData[
+							flatIndex + 1
+						] = curveMetadataTextureData[randomRowInSnakePath * 4]; //store segment length
+						lengthSoFar += curveMetadataTextureData[randomRowInSnakePath * 4];
+						snakePathsCurveMetadataTextureData[
+							flatIndex + 2
+						] = lengthSoFar; //store segment end
+						snakePathsCurveMetadataTextureData[
+							flatIndex + 3
+						] = Math.random() > 0.5 ? 1 : -1; //store segment direction
+					}
+
+					//metadata for the snake aka color + full length of the path
+					const randomColor = new THREE.Color(Math.random() * 0xffffff);
+					snakesMetadata[i * 4] = randomColor.r; // R
+					snakesMetadata[i * 4 + 1] = randomColor.g; // G
+					snakesMetadata[i * 4 + 2] = randomColor.b; // B
+					snakesMetadata[i * 4 + 3] = lengthSoFar; // A
+					snakePathLengths[i] = lengthSoFar;
+				}
+
+				for (let i = 0; i < particleCount; i++) {
+					const snakeId = particleIDs[i] // random snake id
+					const snakePathTotalLength = snakesMetadata[snakeId * 4 + 3]; // total length of the snake path
+					// positions[i * 3 + 2] = positions[i * 3 + 2] * snakePathTotalLength; // progress offset within the snake
+					snakePathLengths[i] = snakePathTotalLength;
+				}
+
+				geoPoints.setAttribute(
+					"position",
+					new THREE.BufferAttribute(positions, 3).setUsage(
+						THREE.DynamicDrawUsage
+					)
+				);
+				
+				staticIdBuffer = new THREE.BufferAttribute(particleIDs, 1).setUsage(
+					THREE.DynamicDrawUsage
+				)
+				staticIdBuffer.gpuType = THREE.IntType;
+				staticIdBuffer.needsUpdate = true;
+
+				snakePathLengthBuffer = new THREE.BufferAttribute(snakePathLengths, 1).setUsage(
+					THREE.DynamicDrawUsage
+				)
+				snakePathLengthBuffer.needsUpdate = true;
+
+				geoPoints.setAttribute(
+					"snakeId",
+					staticIdBuffer
+				); // static snake id buffer
+
+				const pointsShader = new THREE.ShaderMaterial({
+					// glslVersion: THREE.GLSL3,
+					uniforms: {
+						uCurveTexture: { value: null },
+						uSnakesMetadataTexture: { value: null },
+						uRadius: { value: 0.32 },
+						uThickness: { value: 0.22 },
+						uGlowBlurRadius: { value: 0.09 },
+						uGlowStartAlpha: { value: 0.74 }
+					},
+					vertexShader: document
+						.getElementById("vertexShaderParticles")
+						.textContent.trim(),
+					fragmentShader: document
+						.getElementById("fragmentShaderParticles")
+						.textContent.trim(),
+					transparent: true,
+				});
+
+				points = new THREE.Points(geoPoints, pointsShader);
+				points.frustumCulled = false;
+				// pointsShader.depthWrite = false;
+				scene.add(points);
+
+				tf_writeBuffer = points.geometry.getAttribute("position");
+				tf_readBuffer = tf_writeBuffer.clone();
+
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// Setup TF reference
+				const gl = renderer.getContext();
+				feedback = gl.createTransformFeedback();
+
+				renderer.attributes.update(tf_readBuffer, gl.ARRAY_BUFFER);
+				renderer.attributes.update(tf_writeBuffer, gl.ARRAY_BUFFER);
+				renderer.attributes.update(staticIdBuffer, gl.ARRAY_BUFFER);
+				renderer.attributes.update(snakePathLengthBuffer, gl.ARRAY_BUFFER);
+
+				// Setup Compute Shader
+				const vertSrc = document
+					.getElementById("vertexShader")
+					.textContent.trim();
+				const fragSrc = document
+					.getElementById("fragmentShader")
+					.textContent.trim();
+
+				computeShader = new GLShader(gl);
+				computeShader.compile(vertSrc, fragSrc, ["pos"]);
+				computeShader.useUniforms([
+					"time",
+					"count",
+					"uCurveTexture",
+					"uMaxCurves",
+					"uCurveMetadataTexture",
+					"uSnakesTexture",
+					"uSnakesMetadataTexture"
+				]);
+
+
+
+				curveTexture = new THREE.DataTexture(
+					textureData,
+					POINTS_PER_CURVE, // width
+					CURVE_COUNT, // height
+					THREE.RGBAFormat, // format (R,G,B,A)
+					THREE.FloatType // type (important for precision)
+				);
+				curveTexture.minFilter = THREE.LinearFilter;
+				curveTexture.magFilter = THREE.LinearFilter;
+
+				curveMetadataTexture = new THREE.DataTexture(
+					curveMetadataTextureData,
+					1, // width
+					CURVE_COUNT, // height
+					THREE.RGBAFormat, // format (R,G,B,A)
+					THREE.FloatType // type (important for precision)
+				);
+				curveMetadataTexture.minFilter = THREE.NearestFilter;
+				curveMetadataTexture.magFilter = THREE.NearestFilter;
+
+				snakesTexture = new THREE.DataTexture(
+					snakePathsCurveMetadataTextureData,
+					max_segment_count, // width
+					snakeCounts, // height
+					THREE.RGBAFormat, // format (R,G,B,A)
+					THREE.FloatType // type (important for precision)
+				);
+				snakesTexture.minFilter = THREE.NearestFilter;
+				snakesTexture.magFilter = THREE.NearestFilter;
+
+				snakesMetadataTexture = new THREE.DataTexture(
+					snakesMetadata,
+					1, // width
+					snakeCounts, // height
+					THREE.RGBAFormat, // format (R,G,B,A)
+					THREE.FloatType // type (important for precision)
+				);
+				snakesMetadataTexture.minFilter = THREE.NearestFilter;
+				snakesMetadataTexture.magFilter = THREE.NearestFilter;
+
+				// We need to tell three.js to update the texture to the GPU
+				curveTexture.needsUpdate = true;
+				curveMetadataTexture.needsUpdate = true;
+				snakesTexture.needsUpdate = true;
+				snakesMetadataTexture.needsUpdate = true;
+
+				pointsShader.uniforms.uSnakesMetadataTexture.value = snakesMetadataTexture;
+				pointsShader.uniforms.uCurveTexture.value = curveTexture;
+
+				pointsShader.needsUpdate = true;
+
+				// Disable mipmaps and use nearest-neighbor filtering for exact data lookup
+
+				renderer.initTexture(curveTexture);
+				renderer.initTexture(curveMetadataTexture);
+				renderer.initTexture(snakesTexture);
+				renderer.initTexture(snakesMetadataTexture);
+
+				
+// 2. Define the Shaders
+    const vertexShader = `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `;
+
+    const fragmentShader = `
+        varying vec2 vUv;
+        
+        // Declare all 16 sampler uniforms
+        uniform sampler2D uTexture0, uTexture1, uTexture2, uTexture3, uTexture4, uTexture5, uTexture6, uTexture7, uTexture8, uTexture9, uTexture10, uTexture11, uTexture12, uTexture13, uTexture14, uTexture15;
+
+        void main() {
+            float columnIndex = floor(vUv.x * 16.0);
+            
+            // --- FIX ---
+            // Calculate new UVs that "tile" the texture within each column.
+            // The fract() function gets the fractional part, making the x-coordinate
+            // go from 0.0 to 1.0 within each of the 16 columns.
+            vec2 tiledUv = vec2(fract(vUv.x * 16.0), vUv.y);
+            
+            vec3 finalColor;
+
+            // Use the new 'tiledUv' for all texture lookups
+            if (columnIndex == 0.0) { finalColor = texture2D(uTexture0, tiledUv).rgb; }
+            else if (columnIndex == 1.0) { finalColor = texture2D(uTexture1, tiledUv).rgb; }
+            else if (columnIndex == 2.0) { finalColor = texture2D(uTexture2, tiledUv).rgb; }
+            else if (columnIndex == 3.0) { finalColor = texture2D(uTexture3, tiledUv).rgb; }
+            else if (columnIndex == 4.0) { finalColor = texture2D(uTexture4, tiledUv).rgb; }
+            else if (columnIndex == 5.0) { finalColor = texture2D(uTexture5, tiledUv).rgb; }
+            else if (columnIndex == 6.0) { finalColor = texture2D(uTexture6, tiledUv).rgb; }
+            else if (columnIndex == 7.0) { finalColor = texture2D(uTexture7, tiledUv).rgb; }
+            else if (columnIndex == 8.0) { finalColor = texture2D(uTexture8, tiledUv).rgb; }
+            else if (columnIndex == 9.0) { finalColor = texture2D(uTexture9, tiledUv).rgb; }
+            else if (columnIndex == 10.0) { finalColor = texture2D(uTexture10, tiledUv).rgb; }
+            else if (columnIndex == 11.0) { finalColor = texture2D(uTexture11, tiledUv).rgb; }
+            else if (columnIndex == 12.0) { finalColor = texture2D(uTexture12, tiledUv).rgb; }
+            else if (columnIndex == 13.0) { finalColor = texture2D(uTexture13, tiledUv).rgb; }
+            else if (columnIndex == 14.0) { finalColor = texture2D(uTexture14, tiledUv).rgb; }
+            else { finalColor = texture2D(uTexture15, tiledUv).rgb; }
+
+            gl_FragColor = vec4(finalColor, 1.0);
+        }
+    `;
+
+    // 3. Generate the 16 Textures and Uniforms
+    const shaderUniforms = {};
+    const textureCount = 16;
+    const canvasSize = 64;
+
+    for (let i = 0; i < textureCount; i++) {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvasSize;
+        canvas.height = canvasSize;
+        const context = canvas.getContext('2d');
+
+        // Create a green gradient from light to dark by varying the lightness
+        // i=0 -> lightness = 80% (light green)
+        // i=15 -> lightness = 30% (dark green)
+        const lightness = 80 - (i / (textureCount - 1)) * 50;
+        context.fillStyle = `hsl(120, 70%, ${lightness}%)`;
+        context.fillRect(0, 0, canvasSize, canvasSize);
+
+        // Draw the index number on the texture
+        context.fillStyle = 'black';
+        context.font = 'bold 32px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText(i, canvasSize / 2, canvasSize / 2);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        shaderUniforms[`uTexture${i}`] = { value: texture };
+    }
+
+    // 4. Create the Material and Mesh
+    const debugMaterial = new THREE.ShaderMaterial({
+        uniforms: shaderUniforms,
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader,
+        side: THREE.DoubleSide
+    });
+
+    const geometry = new THREE.PlaneGeometry(3, 3);
+    const mesh = new THREE.Mesh(geometry, debugMaterial);
+    scene.add(mesh);
+
+
+
+			}
+
+			let iteration = 0;
+			function compute(et) {
+				iteration++;
+
+				// console.log('compute', instMesh.instanceMatrix)
+
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// Alias
+				const rend = renderer;
+
+				// GL Buffers don't exist until after the first frame render
+				// Skip frame if the gl buffer for instanceMatrix doesn't exist
+				// Get the underlying WebGLBuffers from the THREE attributes
+				const isPairIteration = iteration % 2 === 0;
+				const readBufferInfo = isPairIteration
+					? rend.attributes.get(tf_readBuffer)
+					: rend.attributes.get(tf_writeBuffer);
+				const writeBufferInfo = isPairIteration
+					? rend.attributes.get(tf_writeBuffer)
+					: rend.attributes.get(tf_readBuffer);
+
+				const webglState = renderer.state
+
+				// Skip frame if the gl buffers don't exist yet
+				if (!writeBufferInfo) return;
+
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// Looks like 3JS leaves VAOs bound after rendering
+				// This breaks buffer binding for transform feedback
+				// SOOO... Make sure there are no VAO bound before running TF
+				const gl = rend.getContext();
+				gl.bindVertexArray(null);
+
+				// For extra protection, lets just unbind array buffers too
+				// Doesn't seem needed but since VAO was an issue, lets do this too.
+				gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+				// =================================================================
+				// == ATTENTION: ADD THIS SECTION TO BIND YOUR INPUT BUFFER       ==
+				// =================================================================
+
+				// 1. Create and bind a VAO to store the input attribute configuration.
+				const vao = gl.createVertexArray();
+				gl.bindVertexArray(vao);
+
+				// 2. Bind your READ buffer to the ARRAY_BUFFER target.
+				gl.bindBuffer(gl.ARRAY_BUFFER, readBufferInfo.buffer);
+
+				// 3. Define how the shader should read the data from the buffer.
+				//    (This example assumes a vec3 attribute at location 0)
+				const attributeLocation = 0; // Or get it with gl.getAttribLocation()
+				const size = 3; // 3 components per attribute (vec3)
+				const type = gl.FLOAT;
+				const normalize = false;
+				const stride = 0; // 0 = move forward size * sizeof(type) each iteration
+				const offset = 0; // Start at the beginning of the buffer
+				gl.vertexAttribPointer(
+					attributeLocation,
+					size,
+					type,
+					normalize,
+					stride,
+					offset
+				);
+				gl.enableVertexAttribArray(attributeLocation);
+
+				const idBufferInfo = rend.attributes.get(staticIdBuffer); // Get the WebGLBuffer
+				gl.bindBuffer(gl.ARRAY_BUFFER, idBufferInfo.buffer);
+				gl.vertexAttribIPointer(1, 1, gl.INT, 0, 0); // Setup attribute pointer at location 1
+				gl.enableVertexAttribArray(1);
+
+				const snakeBufferInfo = rend.attributes.get(snakePathLengthBuffer); // Get the WebGLBuffer
+				gl.bindBuffer(gl.ARRAY_BUFFER, snakeBufferInfo.buffer);
+				gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0); // Setup attribute pointer at location 1
+				gl.enableVertexAttribArray(2);
+				// 4. Enable the attribute.
+
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// // 5 BIND THE DATA TEXTURE
+				const textureUnit = 0; // Use texture unit 0
+				webglState.bindTexture(gl.TEXTURE_2D, rend.properties.get(curveTexture).__webglTexture, gl.TEXTURE0 + textureUnit)
+				
+				const textureUnit2 = 1;
+				webglState.bindTexture(gl.TEXTURE_2D, rend.properties.get(curveMetadataTexture).__webglTexture, gl.TEXTURE0 + textureUnit2)
+
+				const textureUnit3 = 2;
+				webglState.bindTexture(gl.TEXTURE_2D, rend.properties.get(snakesTexture).__webglTexture, gl.TEXTURE0 + textureUnit3)
+
+				const textureUnit4 = 3;
+				webglState.bindTexture(gl.TEXTURE_2D, rend.properties.get(snakesMetadataTexture).__webglTexture, gl.TEXTURE0 + textureUnit4)
+
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// Setup Shader
+				gl.useProgram(computeShader.prog); // Turn on shader
+				gl.uniform1i(computeShader.uniforms.uCurveTexture, textureUnit);
+				gl.uniform1i(
+					computeShader.uniforms.uCurveMetadataTexture,
+					textureUnit2
+				);
+				gl.uniform1i(computeShader.uniforms.uSnakesTexture, textureUnit3);
+				gl.uniform1i(computeShader.uniforms.uSnakesMetadataTexture, textureUnit4);
+				gl.uniform1f(computeShader.uniforms.time, et); // Set Float Uniforms
+				gl.uniform1f(computeShader.uniforms.count, particleCount);
+				gl.uniform1f(computeShader.uniforms.uMaxCurves, CURVE_COUNT);
+
+				gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, feedback); // Bind TransformFeedback
+				gl.enable(gl.RASTERIZER_DISCARD); // Disable fragment shader, its not needed
+
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// Bind the output buffer, which is the instance matrix
+				gl.bindBufferBase(
+					gl.TRANSFORM_FEEDBACK_BUFFER,
+					0,
+					writeBufferInfo.buffer
+				);
+
+				// Run compute shader. Special care is needed to manipulate a MAT4 buffer.
+				// TransformFeedback has a hard limit of 4 floats per output but Mat4 has 16
+				// We can work around this by breaking down the matrix by sets of four Vec4s
+				// In the compute shader we determine which Vec4 row of the instance its working
+				// on and set the correct value for that row in the matrix.
+				gl.beginTransformFeedback(gl.POINTS); // Execute as 1 vector at a time linearly
+				gl.drawArrays(gl.POINTS, 0, particleCount); // 1 vec3 per point
+				gl.endTransformFeedback();
+
+				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				gl.disable(gl.RASTERIZER_DISCARD); // Turn back on Fragment shaders
+				gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null); // Turn off Transform feedback
+				gl.useProgram(null); // Turn off shader
+
+				// ----- ADD THIS FULL STATE RESET -----
+				gl.bindVertexArray(null);
+
+				// todo maybe needed maybe not, looks like not
+				// webglState.activeTexture(gl.TEXTURE0 + textureUnit4);
+				// webglState.unbindTexture();
+				// webglState.activeTexture(gl.TEXTURE0 + textureUnit3);
+				// webglState.unbindTexture();
+				// webglState.activeTexture(gl.TEXTURE0 + textureUnit2);
+				// webglState.unbindTexture();
+				// webglState.activeTexture(gl.TEXTURE0 + textureUnit);
+				// webglState.unbindTexture();
+
+				// gl.activeTexture(gl.TEXTURE0 + textureUnit);
+				// gl.bindTexture(
+				// 	gl.TEXTURE_2D,
+				// 	null
+				// );
+
+				// gl.activeTexture(gl.TEXTURE0 + textureUnit2);
+				// gl.bindTexture(
+				// 	gl.TEXTURE_2D,
+				// 	null
+				// );
+
+				// gl.activeTexture(gl.TEXTURE0 + textureUnit3);
+				// gl.bindTexture(
+				// 	gl.TEXTURE_2D,
+				// 	null
+				// );
+
+				// gl.activeTexture(gl.TEXTURE0 + textureUnit4);
+				// gl.bindTexture(
+				// 	gl.TEXTURE_2D,
+				// 	null
+				// );
+
+
+				// renderer.resetState();
+			}
+
+			// #endregion
+
+			// #region GL HELPERS
+			class GLShader {
+				// #region MAIN
+				constructor(gl) {
+					this.gl = gl;
+					this.prog = null;
+					this.uniforms = {};
+				}
+
+				dispose() {
+					if (this.prog) this.gl.deleteProgram(this.prog);
+					this.gl = null;
+				}
+				// #endregion
+
+				// #region METHODS
+				compile(vSrc, fSrc, tfVarying = null) {
+					// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+					// Compile Shader
+					const vSh = this._compileShader(vSrc, true);
+					if (!vSh) return false;
+
+					const fSh = this._compileShader(fSrc, false);
+					if (!fSh) {
+						this.gl.deleteShader(vSh);
+						return false;
+					}
+
+					// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+					this.prog = this._linkProgram(vSh, fSh, tfVarying);
+					return !!this.prog;
+				}
+
+				useUniforms(ary) {
+					for (const i of ary) {
+						this.uniforms[i] = this.gl.getUniformLocation(this.prog, i);
+					}
+
+					return this;
+				}
+				// #endregion
+
+				// #region HELPERS
+				_compileShader(src, isVert = true) {
+					const sh = this.gl.createShader(
+						isVert ? this.gl.VERTEX_SHADER : this.gl.FRAGMENT_SHADER
+					);
+
+					this.gl.shaderSource(sh, src);
+					this.gl.compileShader(sh);
+
+					if (!this.gl.getShaderParameter(sh, this.gl.COMPILE_STATUS)) {
+						console.log(
+							"SHADER COMPILE ERROR - isVert: ",
+							isVert,
+							"MSG: ",
+							this.gl.getShaderInfoLog(sh)
+						);
+						this.gl.deleteShader(sh);
+						return null;
+					}
+
+					return sh;
+				}
+
+				_linkProgram(vSh, fSh, tfVarying = null) {
+					// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+					// Build Program
+					const prog = this.gl.createProgram();
+					this.gl.attachShader(prog, vSh);
+					this.gl.attachShader(prog, fSh);
+
+					if (tfVarying) {
+						// Define shader TF outputs
+						this.gl.transformFeedbackVaryings(
+							prog,
+							tfVarying,
+							this.gl.SEPARATE_ATTRIBS
+						);
+					}
+
+					this.gl.linkProgram(prog);
+
+					// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+					// Cleanup
+					this.gl.detachShader(prog, vSh);
+					this.gl.detachShader(prog, fSh);
+					this.gl.deleteShader(vSh);
+					this.gl.deleteShader(fSh);
+
+					// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+					// Validate
+					if (!this.gl.getProgramParameter(prog, this.gl.LINK_STATUS)) {
+						console.log("LINK ERROR", this.gl.getProgramInfoLog(prog));
+						this.gl.deleteProgram(prog);
+						return null;
+					}
+
+					return prog;
+				}
+				// #endregion
+			}
+			// #endregion
+		</script>
+	</body>
+</html>

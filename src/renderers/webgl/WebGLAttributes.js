@@ -168,6 +168,8 @@ function WebGLAttributes( gl ) {
 
 		const data = buffers.get( attribute );
 
+		console.log('delete attribute', attribute)
+
 		if ( data ) {
 
 			gl.deleteBuffer( data.buffer );
@@ -205,7 +207,10 @@ function WebGLAttributes( gl ) {
 
 		if ( data === undefined ) {
 
-			buffers.set( attribute, createBuffer( attribute, bufferType ) );
+
+			const createdBuffer = createBuffer( attribute, bufferType );
+			console.log('create buffer', attribute,createdBuffer)
+			buffers.set( attribute, createdBuffer );
 
 		} else if ( data.version < attribute.version ) {
 

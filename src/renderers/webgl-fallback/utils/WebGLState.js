@@ -1029,6 +1029,9 @@ class WebGLState {
 
 	}
 
+
+
+	
 	/**
 	 * Binds the given WebGL texture to a target.
 	 *
@@ -1040,6 +1043,7 @@ class WebGLState {
 	 * @param {number} webglSlot - The texture.
 	 */
 	bindTexture( webglType, webglTexture, webglSlot ) {
+		console.log('will bindTexture')
 
 		const { gl, currentTextureSlot, currentBoundTextures, maxTextures } = this;
 
@@ -1081,6 +1085,8 @@ class WebGLState {
 			boundTexture.texture = webglTexture;
 
 		}
+
+		console.log('texture bound', webglSlot)
 
 	}
 

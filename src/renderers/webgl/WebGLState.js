@@ -959,6 +959,8 @@ function WebGLState( gl, extensions ) {
 
 		}
 
+		return currentTextureSlot - gl.TEXTURE0; // return the texture slot index
+
 	}
 
 	function unbindTexture() {

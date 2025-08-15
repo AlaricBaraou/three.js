@@ -69,6 +69,8 @@ class WebGLRenderer {
 	 */
 	constructor( parameters = {} ) {
 
+		console.log( 'WebGLRenderer constructor' );
+
 		const {
 			canvas = createCanvasElement(),
 			context = null,
@@ -467,6 +469,14 @@ class WebGLRenderer {
 			_this.properties = properties;
 
 			/**
+			 * Used to track properties of other objects like native WebGL objects.
+			 *
+			 * @name WebGLRenderer#properties
+			 * @type {Object}
+			 */
+			_this.attributes = attributes;
+
+			/**
 			 * Manages the render lists of the renderer.
 			 *
 			 * @name WebGLRenderer#renderLists
@@ -491,6 +501,7 @@ class WebGLRenderer {
 			 * @type {Object}
 			 */
 			_this.state = state;
+			console.log('WebGLRenderer state initialized', state);
 
 			/**
 			 * Holds a series of statistical information about the GPU memory
