@@ -480,15 +480,33 @@
 
 						void main() {
 							vUv = uv;
-							// Manually compute the transformation:
-							// 1. Rotate the base vertex position by the instance's quaternion.
-							vec3 rotatedPosition = applyQuaternion(position, instanceQuaternion);
 
-							// 2. Translate the rotated vertex by the instance's position.
-							vec3 worldPosition = rotatedPosition + instancePosition;
+							// 1. First, determine the instance's unique "up" vector in world space.
+							// We do this by rotating a standard up vector by the instance's quaternion.
+							vec3 objectUp_world = applyQuaternion(vec3(0.0, 1.0, 0.0), instanceQuaternion);
 
-							// 3. Apply standard camera projection.
-							gl_Position = projectionMatrix * modelViewMatrix * vec4(worldPosition, 1.0);
+							// 2. Get the direction from the instance to the camera.
+							vec3 lookAt_world = cameraPosition - instancePosition;
+
+							// 3. Project the lookAt vector onto the plane defined by objectUp_world.
+							// This is the key step. It effectively "flattens" the camera direction
+							// relative to the object's personal up-axis, not the world's.
+							vec3 billboardForward = lookAt_world - dot(lookAt_world, objectUp_world) * objectUp_world;
+							billboardForward = normalize(billboardForward);
+
+							// 4. With our new 'forward' and original 'up', find the 'right' vector.
+							vec3 billboardRight = normalize(cross(objectUp_world, billboardForward));
+
+							// 5. Position the vertex in world space using these dynamic billboard axes.
+							vec3 finalWorldPosition = instancePosition
+													+ billboardRight * position.x
+													+ objectUp_world * position.y
+													+ billboardForward * position.z;
+
+							// ----------------- END OF AXIAL BILLBOARD LOGIC -----------------
+
+							// 6. Apply the standard view and projection matrices.
+							gl_Position = projectionMatrix * viewMatrix * vec4(finalWorldPosition, 1.0);
 						}
 					`,
 					fragmentShader: `
