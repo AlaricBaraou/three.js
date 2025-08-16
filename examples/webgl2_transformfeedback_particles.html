@@ -39,10 +39,8 @@
 			uniform float time;     // Animation Time
 			uniform float count;    // Total Instances
 			uniform float uMaxCurves;    // Total Instances
-			uniform sampler2D uCurveTexture; // can remove not used in this version 
 			uniform sampler2D uCurveMetadataTexture;
 			uniform sampler2D uSnakesTexture;
-			uniform sampler2D uSnakesMetadataTexture; // can remove not used in this version 
 
 			out vec3 pos;
 			in vec3 inPos;
@@ -55,9 +53,7 @@
 				float prog = inPos.z;
 				float prevCurveId = inPos.x;
 
-				// float snakePathLength = texelFetch(uSnakesMetadataTexture, ivec2(0, snakeId), 0).x;
-				float newTotalProgress = prog * snakePathLength + time * speed;
-
+				float newTotalProgress = mod(prog * snakePathLength + time * speed, snakePathLength);
 				float foundCurveId = 0.;
 				float newProgOnCurve = 0.;
 				bool isFound = false;
@@ -546,11 +542,9 @@ void main() {
 				computeShader.useUniforms([
 					"time",
 					"count",
-					"uCurveTexture",
 					"uMaxCurves",
 					"uCurveMetadataTexture",
 					"uSnakesTexture",
-					"uSnakesMetadataTexture"
 				]);
 
 
@@ -786,30 +780,22 @@ void main() {
 
 				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				// // 5 BIND THE DATA TEXTURE
-				const textureUnit = 0; // Use texture unit 0
-				webglState.bindTexture(gl.TEXTURE_2D, rend.properties.get(curveTexture).__webglTexture, gl.TEXTURE0 + textureUnit)
-				
+				const textureUnit = 0;
+				webglState.bindTexture(gl.TEXTURE_2D, rend.properties.get(curveMetadataTexture).__webglTexture, gl.TEXTURE0 + textureUnit)
+
 				const textureUnit2 = 1;
-				webglState.bindTexture(gl.TEXTURE_2D, rend.properties.get(curveMetadataTexture).__webglTexture, gl.TEXTURE0 + textureUnit2)
-
-				const textureUnit3 = 2;
-				webglState.bindTexture(gl.TEXTURE_2D, rend.properties.get(snakesTexture).__webglTexture, gl.TEXTURE0 + textureUnit3)
-
-				const textureUnit4 = 3;
-				webglState.bindTexture(gl.TEXTURE_2D, rend.properties.get(snakesMetadataTexture).__webglTexture, gl.TEXTURE0 + textureUnit4)
+				webglState.bindTexture(gl.TEXTURE_2D, rend.properties.get(snakesTexture).__webglTexture, gl.TEXTURE0 + textureUnit2)
 
 				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 				// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				// Setup Shader
 				gl.useProgram(computeShader.prog); // Turn on shader
-				gl.uniform1i(computeShader.uniforms.uCurveTexture, textureUnit);
 				gl.uniform1i(
 					computeShader.uniforms.uCurveMetadataTexture,
-					textureUnit2
+					textureUnit
 				);
-				gl.uniform1i(computeShader.uniforms.uSnakesTexture, textureUnit3);
-				gl.uniform1i(computeShader.uniforms.uSnakesMetadataTexture, textureUnit4);
+				gl.uniform1i(computeShader.uniforms.uSnakesTexture, textureUnit2);
 				gl.uniform1f(computeShader.uniforms.time, et); // Set Float Uniforms
 				gl.uniform1f(computeShader.uniforms.count, particleCount);
 				gl.uniform1f(computeShader.uniforms.uMaxCurves, CURVE_COUNT);
